@@ -14,7 +14,7 @@
 #' @param minimum.spatial.resolution Numeric minimum spatial resolution.
 #' @param summary.plots If TRUE, plots of smoothed sample density, the dependent variable, and variance are returned along with the plot of resolution by bandwidth.
 #' @param kernel.function The kernel function, one of gaussian.kernel, gaussian.square.kernel, triangular.kernel, square.kernel, or a custom function (defaults to gaussian.kernel).
-#' @return A plot of spatial resolution by temporal bandwidth, along with other summary plots of the data if summary.plots==TRUE.
+#' @return A list containing a plot of spatial resolution by temporal bandwidth, along with other summary plots of the data if summary.plots==TRUE, and the calculated minimum temporal bandwidth.
 #' @export
 calculate.bandwidths.by.resolution<-function(dataset,dependent.variable="dependent.variable",time="year",weight="weight",alpha=0.05,margin=0.1,measure.times,temporal.bandwidth.limits,temporal.bandwidth.n.levels=200,minimum.spatial.resolution=5,summary.plots=FALSE,kernel.function=gaussian.kernel){
 	bw<-resolution<-change_ks<-variance<-weight_n<-NULL; # define variables for use later
@@ -30,9 +30,9 @@ calculate.bandwidths.by.resolution<-function(dataset,dependent.variable="depende
     return(c(time=cyear,change_ks=stats::weighted.mean(dataset[,dependent.variable],dataset$kernel_weight),weight_n=sum(dataset$kernel_weight),variance=Hmisc::wtd.var(x=dataset[,dependent.variable],weights=dataset$kernel_weight)));
   },bandwidth=time.range/10)),nrow=4)));
   colnames(statistics)<-c("time","change_ks","weight_n","variance");
-  change_plot<-ggplot2::ggplot(statistics,ggplot2::aes(x=time,y=change_ks))+ggplot2::geom_line(size=1.2)+ggplot2::ylab("change")+ggplot2::theme_minimal()+ggplot2::theme(text=ggplot2::element_text(family="serif",size=14));
-  variance_plot<-ggplot2::ggplot(statistics,ggplot2::aes(x=time,y=variance))+ggplot2::geom_line(size=1.2)+ggplot2::ylab("variance")+ggplot2::theme_minimal()+ggplot2::theme(text=ggplot2::element_text(family="serif",size=14));
-  n_plot<-ggplot2::ggplot(statistics,ggplot2::aes(x=time,y=weight_n))+ggplot2::geom_line(size=1.2)+ggplot2::ylim(c(min(statistics$weight_n)*0.75,max(statistics$weight_n)*1.25))+ggplot2::ylab("sum weight")+ggplot2::theme_minimal()+ggplot2::theme(text=ggplot2::element_text(family="serif",size=14));
+  change_plot<-ggplot2::ggplot(statistics,ggplot2::aes(x=time,y=change_ks))+ggplot2::geom_line(linewidth=1.2)+ggplot2::ylab("change")+ggplot2::theme_minimal()+ggplot2::theme(text=ggplot2::element_text(family="serif",size=14));
+  variance_plot<-ggplot2::ggplot(statistics,ggplot2::aes(x=time,y=variance))+ggplot2::geom_line(linewidth=1.2)+ggplot2::ylab("variance")+ggplot2::theme_minimal()+ggplot2::theme(text=ggplot2::element_text(family="serif",size=14));
+  n_plot<-ggplot2::ggplot(statistics,ggplot2::aes(x=time,y=weight_n))+ggplot2::geom_line(linewidth=1.2)+ggplot2::ylim(c(min(statistics$weight_n)*0.75,max(statistics$weight_n)*1.25))+ggplot2::ylab("sum weight")+ggplot2::theme_minimal()+ggplot2::theme(text=ggplot2::element_text(family="serif",size=14));
 
 	# calculating resolutions
   resolutions<-expand.grid(time=measure.times,bw=seq(from=temporal.bandwidth.limits[1],to=temporal.bandwidth.limits[2],length.out=temporal.bandwidth.n.levels));
@@ -60,8 +60,8 @@ calculate.bandwidths.by.resolution<-function(dataset,dependent.variable="depende
   }else{
     message(paste0("temporal bandwidth needed is ",max(bw_at_res_min$bw),", choke time is ",mean(bw_at_res_min$time[which(bw_at_res_min$bw==max(bw_at_res_min$bw))]),"\n"));
   }
-  if(!summary.plots){return(res_plot);}
-  else{return(gridExtra::grid.arrange(change_plot,n_plot,variance_plot,res_plot));}
+  if(!summary.plots){return(list(minimum_bandwidth=max(bw_at_res_min$bw),plot=res_plot));}
+  else{return(list(minimum_bandwidth=max(bw_at_res_min$bw),plot=gridExtra::grid.arrange(change_plot,n_plot,variance_plot,res_plot)));}
 }
 #' Calculate temporal bandwidths by separated points
 #'
@@ -97,8 +97,12 @@ calculate.bandwidths.by.separated.points<-function(dataset,dependent.variable="d
 	if(missing(separated.points.labels)){separated.points.labels=paste0("point ",1:nrow(separated.points));}			# if separated points aren't named, number them
 	# project dataset if needed
 	if(!is.na(projection)){
-		dataset[,c(x,y)]<-rgdal::project(as.matrix(dataset[,c(x,y)]),proj=projection);
-		separated.points<-rgdal::project(as.matrix(separated.points[,c(x,y)]),proj=projection);
+		projected <- terra::project(as.matrix(dataset[,c(x,y)]), from="+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs", to=projection);
+		dataset[,x] <- projected[,1];
+		dataset[,y] <- projected[,2];
+		projected <- terra::project(as.matrix(separated.points[,c(x,y)]), from="+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs", to=projection);
+		separated.points[,x] <- projected[,1];
+		separated.points[,y] <- projected[,2];
 	}
 
 	# calculating sample density, change and variance over time
@@ -107,9 +111,9 @@ calculate.bandwidths.by.separated.points<-function(dataset,dependent.variable="d
 		return(c(time=cyear,change_ks=stats::weighted.mean(dataset[,dependent.variable],dataset$kernel_weight),weight_n=sum(dataset$kernel_weight),variance=Hmisc::wtd.var(x=dataset[,dependent.variable],weights=dataset$kernel_weight)));
 	},bandwidth=time.range/10)),nrow=4)));
 	colnames(statistics)<-c("time","change_ks","weight_n","variance");
-	change_plot<-ggplot2::ggplot(statistics,ggplot2::aes(x=time,y=change_ks))+ggplot2::geom_line(size=1.2)+ggplot2::ylab("change")+ggplot2::theme_minimal()+ggplot2::theme(text=ggplot2::element_text(family="serif",size=14));
-	variance_plot<-ggplot2::ggplot(statistics,ggplot2::aes(x=time,y=variance))+ggplot2::geom_line(size=1.2)+ggplot2::ylab("variance")+ggplot2::theme_minimal()+ggplot2::theme(text=ggplot2::element_text(family="serif",size=14));
-	n_plot<-ggplot2::ggplot(statistics,ggplot2::aes(x=time,y=weight_n))+ggplot2::geom_line(size=1.2)+ggplot2::ylim(c(min(statistics$weight_n)*0.75,max(statistics$weight_n)*1.25))+ggplot2::ylab("sum weight")+ggplot2::theme_minimal()+ggplot2::theme(text=ggplot2::element_text(family="serif",size=14));
+	change_plot<-ggplot2::ggplot(statistics,ggplot2::aes(x=time,y=change_ks))+ggplot2::geom_line(linewidth=1.2)+ggplot2::ylab("change")+ggplot2::theme_minimal()+ggplot2::theme(text=ggplot2::element_text(family="serif",size=14));
+	variance_plot<-ggplot2::ggplot(statistics,ggplot2::aes(x=time,y=variance))+ggplot2::geom_line(linewidth=1.2)+ggplot2::ylab("variance")+ggplot2::theme_minimal()+ggplot2::theme(text=ggplot2::element_text(family="serif",size=14));
+	n_plot<-ggplot2::ggplot(statistics,ggplot2::aes(x=time,y=weight_n))+ggplot2::geom_line(linewidth=1.2)+ggplot2::ylim(c(min(statistics$weight_n)*0.75,max(statistics$weight_n)*1.25))+ggplot2::ylab("sum weight")+ggplot2::theme_minimal()+ggplot2::theme(text=ggplot2::element_text(family="serif",size=14));
 
 
 	dm<-wordspace::dist.matrix(M2 =  as.matrix(separated.points),M = as.matrix(dataset[,c(x,y)]),method = "euclidean"); 			# construct a distance matrix between the separated points and all other points, for applying the spatial kernel
@@ -197,7 +201,7 @@ calculate.bandwidths.by.separated.points<-function(dataset,dependent.variable="d
 			}))
 		})),ggplot2::aes(x=time,y=temporal.bandwidth,group=line.num,colour=separated.point))+
 			ggplot2::scale_colour_manual(values=colourlist(length(CLs)),name="point")+
-			ggplot2::geom_path(size=1.2)+
+			ggplot2::geom_path(linewidth=1.2)+
 			ggplot2::ggtitle("minimum temporal bandwidth by time and separated point")+
 			ggplot2::ylab("temporal bandwidth")+
 			ggplot2::theme_minimal()+

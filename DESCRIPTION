@@ -1,11 +1,11 @@
 Package: kernelPhil
 Title: Kernel Smoothing Tools for Philology and Historical Dialectology
-Version: 0.1
+Version: 0.2
 Authors@R: 
     person(given = "Tamsin",
            family = "Blaxter",
            role = c("aut", "cre"),
-           email = "ttb26@cam.ac.uk",
+           email = "tamsinblaxter@gmail.com",
            comment = c(ORCID = "0000-0002-1466-8306"))
 URL: http://www.icge.co.uk/
 Description: Contains kernel smoothing tools designed for use by historical
@@ -20,13 +20,13 @@ Description: Contains kernel smoothing tools designed for use by historical
 License: GPL (>= 3)
 Encoding: UTF-8
 Imports: benchmarkme, directlabels, dplyr, ggplot2, grDevices,
-        gridExtra, Hmisc, pbapply, rgdal, reshape2, stats, utils,
-        wordspace
-LazyData: true
-RoxygenNote: 7.1.1
+        gridExtra, Hmisc, pbapply, reshape2, rlang, stats, terra,
+        utils, wordspace
+RoxygenNote: 7.3.3
 NeedsCompilation: no
-Packaged: 2021-02-24 12:34:46 UTC; tammsin
-Author: Tamsin Blaxter [aut, cre] (<https://orcid.org/0000-0002-1466-8306>)
-Maintainer: Tamsin Blaxter <ttb26@cam.ac.uk>
+Packaged: 2025-11-09 17:37:11 UTC; tamsinn
+Author: Tamsin Blaxter [aut, cre] (ORCID:
+    <https://orcid.org/0000-0002-1466-8306>)
+Maintainer: Tamsin Blaxter <tamsinblaxter@gmail.com>
 Repository: CRAN
-Date/Publication: 2021-02-25 10:50:02 UTC
+Date/Publication: 2025-11-12 21:10:02 UTC

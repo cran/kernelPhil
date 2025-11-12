@@ -45,6 +45,7 @@
 kernel.smooth.in.space.and.time<-function(dataset,dependent.variable="dependent.variable",x="x",y="y",time="year",weight="weight",normalise.by,data.type="factor",alpha=0.05,margin=0.1,kernel.function=gaussian.kernel,adaptive.spatial.bw=TRUE,temporal.bandwidth,measure.points,measure.times,projection=NA,explicit=TRUE){
 	# make sure variables present in the right formats
 	if(!(weight %in% colnames(dataset))){
+		weight<-"weight";
 		dataset[,weight]<-1;
 	}
 
@@ -117,7 +118,8 @@ kernel.smooth.in.space.and.time<-function(dataset,dependent.variable="dependent.
 #' @export
 kernel.smooth.in.space.and.time.with.margins<-function(dataset,dependent.variable="dependent.variable",x="x",y="y",time="year",weight="weight",normalise.by,data.type="factor",alpha=0.05,margin=0.1,kernel.function=gaussian.kernel,adaptive.spatial.bw=TRUE,temporal.bandwidth,measure.points,measure.times,projection=NA,explicit=TRUE){
 	# make sure variables present in the right formats
-	if(!(weight%in%colnames(dataset))){
+	if(!(weight %in% colnames(dataset))){
+		weight<-"weight";
 		dataset$weight<-1;
 	}else{
 		dataset$weight<-dataset[,weight];

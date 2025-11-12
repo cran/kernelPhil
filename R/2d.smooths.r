@@ -31,9 +31,11 @@
 #' ggplot2::ggplot(result,ggplot2::aes(x=x,y=y,colour=relative_density_TRUE))+
 #'     ggplot2::geom_point();
 #' @importFrom dplyr %>%
+#' @importFrom rlang .data
 #' @export
 kernel.smooth.in.space<-function(dataset,dependent.variable="dependent.variable",x="x",y="y",weight="weight",normalise.by,data.type="factor",alpha=0.05,margin=0.1,kernel.function=gaussian.kernel,adaptive.spatial.bw=TRUE,measure.points,projection=NA,round.up.low.variance=TRUE,explicit=TRUE){
 	weight.consistent.name<-dataset.wide<-NULL; # set up variable names for use later
+	if(dependent.variable=="value"){dataset$dependent.variable=dataset$value;dependent.variable="dependent.variable";} # if the column label "value" is used for the dependent variable, change it, since it will break reshape2 functions
 	if(round.up.low.variance){sample.size.func<-sample.size.floored.variance;}else{sample.size.func<-sample.size;}
 
 	# make sure variables present in the right formats
@@ -42,11 +44,11 @@ kernel.smooth.in.space<-function(dataset,dependent.variable="dependent.variable"
 	}else if(data.type=="count"){
 		if(!is.vector(dependent.variable)){stop("if data.type is 'count', dependent.variable should be a vector of column names");}
 		for(dependent.variable.i in dependent.variable){
-			if(class(dataset[,dependent.variable.i])=="factor"){
+			if(inherits(dataset[,dependent.variable.i],"factor")){
 				dataset[,dependent.variable.i]<-as.numeric(as.character(dataset[,dependent.variable.i]));
-			}else if(class(dataset[,dependent.variable.i])=="character"){
+			}else if(inherits(dataset[,dependent.variable.i],"character")){
 				dataset[,dependent.variable.i]<-as.numeric(dataset[,dependent.variable.i]);
-			}else if(class(dataset[,dependent.variable.i])!="numeric"){
+			}else if(!(inherits(dataset[,dependent.variable.i],"numeric"))){
 				stop("for data.type='count', data should be numeric");
 			}
 		}
@@ -54,14 +56,19 @@ kernel.smooth.in.space<-function(dataset,dependent.variable="dependent.variable"
 		stop("data.type should be one of 'factor' or 'count'");
 	}
 	if(!(weight %in% colnames(dataset))){
-		dataset[,weight]<-1;
+		dataset$weight<-1;
+		weight<-"weight";
 	}
 
 	# get rid of items with na location
 	dataset<-dataset[which(!is.na(dataset[,x]) & !is.na(dataset[,y])),];
 
 	# project dataset if needed
-	if(!is.na(projection)){dataset[,c(x,y)]<-rgdal::project(as.matrix(dataset[,c(x,y)]),proj=projection);}
+	if(!is.na(projection)){
+		projected <- terra::project(as.matrix(dataset[,c(x,y)]), from="+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs", to=projection)
+		dataset[,x] <- projected[,1]
+		dataset[,y] <- projected[,2]
+	}
 
 	# if a column name is passed with "normalise.by", then divide weight by count of factor levels (used for normalising weights by text id, speaker id, etc.)
 	if(!missing(normalise.by)){
@@ -91,7 +98,7 @@ kernel.smooth.in.space<-function(dataset,dependent.variable="dependent.variable"
 	if(data.type=="factor"){
 		dataset$weight.consistent.name<-dataset[,weight];
 		# reshape data so that we have one row per coordinate pair with counts of each level of the factor multiplied by weights
-		suppressMessages(dataset.wide<-dplyr::group_by_(dataset,x,y,dependent.variable) %>% dplyr::summarise(count=dplyr::n(), sum_weight=sum(weight.consistent.name,na.rm=TRUE)) %>% as.data.frame %>% reshape2::melt(id.var=c(x,y,dependent.variable)) %>% reshape2::dcast(sprintf("%s+%s~variable+%s",x,y,dependent.variable)));
+		suppressMessages(dataset.wide<-dplyr::group_by(.data=dataset,.data[[x]],.data[[y]],.data[[dependent.variable]]) %>% dplyr::summarise(count=dplyr::n(), sum_weight=sum(weight.consistent.name,na.rm=TRUE)) %>% as.data.frame %>% reshape2::melt(id.var=c(x,y,dependent.variable)) %>% reshape2::dcast(sprintf("%s+%s~variable+%s",x,y,dependent.variable)));
 		dataset$weight.consistent.name<-NULL;
 
 		# list levels of the factor
@@ -106,7 +113,11 @@ kernel.smooth.in.space<-function(dataset,dependent.variable="dependent.variable"
 		measure.points=dataset.wide[,c(x,y)];
 	}else{
 		# project measure points if needed
-		if(!is.na(projection)){measure.points[,c(x,y)]<-rgdal::project(as.matrix(measure.points[,c(x,y)]),proj=projection);}
+		if(!is.na(projection)){
+			projected <- terra::project(as.matrix(measure.points[,c(x,y)]), from="+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs", to=projection)
+			measure.points[,x] <- projected[,1]
+			measure.points[,y] <- projected[,2]
+		}
 	}
 
 	# calculate distance matrix
@@ -128,19 +139,19 @@ kernel.smooth.in.space<-function(dataset,dependent.variable="dependent.variable"
 	};
 	if(explicit){
 		message("identifying local bandwidths\n");
-		measure.points$bw<-unlist(pbapply::pblapply(1:nrow(dataset.wide),FUN = find.bandwidth));
+		measure.points$bw<-unlist(pbapply::pblapply(1:nrow(measure.points),FUN = find.bandwidth));
 	}else{
-		measure.points$bw<-unlist(lapply(1:nrow(dataset.wide),FUN = find.bandwidth));
+		measure.points$bw<-unlist(lapply(1:nrow(measure.points),FUN = find.bandwidth));
 	}
 
 	# if static bandwidth, take the mean bandwidth
 	if(!adaptive.spatial.bw){
-		measure.points$bw<-mean(dataset.wide$bw);
+		measure.points$bw<-mean(measure.points$bw);
 	}
 
 	apply.kernel.smooth.by.location<-function(crow){
 		# apply spatial kernel
-		dataset.wide$current.kernel.value<<-unlist(lapply(dm[,crow],kernel.function,bandwidth=measure.points$bw[crow]));
+		dataset.wide$current.kernel.value<<-kernel.function(dm[,crow],bandwidth=measure.points$bw[crow]);
 
 		# sum weights per variant across the relevant locations
 		cresult<-stats::setNames(data.frame(rbind(unlist(lapply(dependent.variable.levels,function(dependent.variable.level) return(sum(dataset.wide[,paste0("sum_weight_",dependent.variable.level)]*dataset.wide$current.kernel.value,na.rm=TRUE)))))),paste0("sum_weight_",dependent.variable.levels));
@@ -164,7 +175,7 @@ kernel.smooth.in.space<-function(dataset,dependent.variable="dependent.variable"
 
 	# reassociate with locations
 	results<-cbind(measure.points,results[,c(paste0("relative_density_",dependent.variable.levels),"effective_sample_size")]);
-	results<-merge(results,dataset.wide[,c(x,y,"sum_weight")],by=c(x,y));
+	results<-merge(results,dataset.wide[,c(x,y,"sum_weight")],by=c(x,y),all.x=TRUE,all.y=FALSE);
 	colnames(results)[length(colnames(results))]<-"weight_at_point";
 
 	results$best<-unlist(apply(results,1,function(X){
@@ -172,7 +183,11 @@ kernel.smooth.in.space<-function(dataset,dependent.variable="dependent.variable"
 	}));
 
 	# deproject dataset if needed
-	if(!is.na(projection)){results[,c(x,y)]<-rgdal::project(as.matrix(results[,c(x,y)]),proj=projection,inv=TRUE);}
+	if(!is.na(projection)){
+		projected <- terra::project(as.matrix(results[,c(x,y)]), from=projection, to="+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")
+		results[,x] <- projected[,1]
+		results[,y] <- projected[,2]
+	}
 
 	return(results);
 }
@@ -219,17 +234,18 @@ kernel.smooth.in.space.with.margins<-function(dataset,dependent.variable="depend
 	}else if(data.type=="count"){
 		if(!is.vector(dependent.variable)){stop("if data.type is 'count', dependent.variable should be a vector of column names");}
 		for(dependent.variable.i in dependent.variable){
-			if(class(dataset[,dependent.variable.i])=="factor"){
+			if(inherits(dataset[,dependent.variable.i],"factor")){
 				dataset[,dependent.variable.i]<-as.numeric(as.character(dataset[,dependent.variable.i]));
-			}else if(class(dataset[,dependent.variable.i])=="character"){
+			}else if(inherits(dataset[,dependent.variable.i],"character")){
 				dataset[,dependent.variable.i]<-as.numeric(dataset[,dependent.variable.i]);
-			}else if(class(dataset[,dependent.variable.i])!="numeric"){
+			}else if(!(inherits(dataset[,dependent.variable.i],"numeric"))){
 				stop("for data.type='count', data should be numeric");
 			}
 		}
 	}
 	if(!(weight %in% colnames(dataset))){
 		dataset$weight<-1;
+		weight<-"weight";
 	}else{
 		dataset$weight<-dataset[,weight];
 	}
@@ -238,7 +254,11 @@ kernel.smooth.in.space.with.margins<-function(dataset,dependent.variable="depend
 	dataset<-dataset[which(!is.na(dataset[,x]) & !is.na(dataset[,y])),];
 
 	# project dataset if needed
-	if(!is.na(projection)){dataset[,c(x,y)]<-rgdal::project(as.matrix(dataset[,c(x,y)]),proj=projection);}
+	if(!is.na(projection)){
+		projected <- terra::project(as.matrix(dataset[,c(x,y)]), from="+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs", to=projection)
+		dataset[,x] <- projected[,1]
+		dataset[,y] <- projected[,2]
+	}
 
 	# if a column name is passed with "normalise.by", then divide weight by count of factor levels (used for normalising weights by text id, speaker id, etc.)
 	if(!missing(normalise.by)){
@@ -287,7 +307,11 @@ kernel.smooth.in.space.with.margins<-function(dataset,dependent.variable="depend
 		measure.points=location.index.df;
 	}else{
 		# project measure points if needed
-		if(!is.na(projection)){measure.points[,c(x,y)]<-rgdal::project(as.matrix(measure.points[,c(x,y)]),proj=projection);}
+		if(!is.na(projection)){
+			projected <- terra::project(as.matrix(measure.points[,c(x,y)]), from="+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs", to=projection)
+			measure.points[,x] <- projected[,1]
+			measure.points[,y] <- projected[,2]
+		}
 	}
 
 	# check available system memory
@@ -351,15 +375,15 @@ kernel.smooth.in.space.with.margins<-function(dataset,dependent.variable="depend
 
 	# if static bandwidth, take the mean bandwidth
 	if(!adaptive.spatial.bw){
-		dataset.prepped$bw<-mean(dataset.prepped$bw);
+		measure.points$bw<-mean(measure.points$bw);
 	}
 
 	dataset.prepped[,paste0("prop_",dependent.variable.levels)]<-dataset.prepped[,paste0("sum_weight_",dependent.variable.levels)]/dataset.prepped$sum_weight;
-
+	memflag=T;
 	if(memflag){ # memory-safe, slow version
 		apply.kernel.smooth.by.location<-function(crow){
 			# apply spatial kernel
-			current_kernel<-unlist(lapply(dm[dataset.prepped$location_index,crow],kernel.function,bandwidth=measure.points$bw[crow]));
+			current_kernel<-kernel.function(dm[dataset.prepped$location_index,crow],bandwidth=measure.points$bw[crow]);
 			current_weights<-current_kernel*dataset.prepped$sum_weight;
 			current_n<-sum(current_weights);
 
@@ -368,7 +392,6 @@ kernel.smooth.in.space.with.margins<-function(dataset,dependent.variable="depend
 				current_mean<-sum(dataset.prepped[,paste0("prop_",dependent.variable.level)]*current_weights,na.rm=TRUE)/current_n;
 				current_var<-Hmisc::wtd.mean(x = (dataset.prepped[,paste0("prop_",dependent.variable.level)]-current_mean)^2,current_weights,normwt=TRUE);
 				current_sd<-sqrt(current_var);
-				if(current_sd>1){browser();}
 				current_confint<- -1*stats::qnorm(alpha/2)*(current_sd/sqrt(current_n));
 				return(stats::setNames(c(current_mean,current_sd,current_confint),c(paste0("relative_density_",dependent.variable.level),paste0("sd_",dependent.variable.level),paste0("confint_",dependent.variable.level))));
 			})));
@@ -380,7 +403,8 @@ kernel.smooth.in.space.with.margins<-function(dataset,dependent.variable="depend
 	}else{
 		apply.kernel.smooth.by.location<-function(crow){
 			# apply spatial kernel
-			current_kernel<-unlist(lapply(dm[,crow],kernel.function,bandwidth=measure.points$bw[crow]));
+			current_kernel<-kernel.function(dm[,crow],bandwidth=measure.points$bw[crow]);
+
 			current_weights<-current_kernel*dataset.prepped$sum_weight;
 			current_n<-sum(current_weights);
 
@@ -389,7 +413,6 @@ kernel.smooth.in.space.with.margins<-function(dataset,dependent.variable="depend
 				current_mean<-sum(dataset.prepped[,paste0("prop_",dependent.variable.level)]*current_weights,na.rm=TRUE)/current_n;
 				current_var<-Hmisc::wtd.mean(x = (dataset.prepped[,paste0("prop_",dependent.variable.level)]-current_mean)^2,current_weights,normwt=TRUE);
 				current_sd<-sqrt(current_var);
-				if(current_sd>1){browser();}
 				current_confint<- -1*stats::qnorm(alpha/2)*(current_sd/sqrt(current_n));
 				return(stats::setNames(c(current_mean,current_sd,current_confint),c(paste0("relative_density_",dependent.variable.level),paste0("sd_",dependent.variable.level),paste0("confint_",dependent.variable.level))));
 			})));
@@ -417,7 +440,11 @@ kernel.smooth.in.space.with.margins<-function(dataset,dependent.variable="depend
 	}));
 
 	# deproject dataset if needed
-	if(!is.na(projection)){results[,c(x,y)]<-rgdal::project(as.matrix(results[,c(x,y)]),proj=projection,inv=TRUE);}
+	if(!is.na(projection)){
+		projected <- terra::project(as.matrix(results[,c(x,y)]), from=projection, to="+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")
+		results[,x] <- projected[,1]
+		results[,y] <- projected[,2]
+	}
 
 	return(results);
 }

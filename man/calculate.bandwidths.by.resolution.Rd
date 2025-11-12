@@ -45,7 +45,7 @@ calculate.bandwidths.by.resolution(
 \item{kernel.function}{The kernel function, one of gaussian.kernel, gaussian.square.kernel, triangular.kernel, square.kernel, or a custom function (defaults to gaussian.kernel).}
 }
 \value{
-A plot of spatial resolution by temporal bandwidth, along with other summary plots of the data if summary.plots==TRUE.
+A list containing a plot of spatial resolution by temporal bandwidth, along with other summary plots of the data if summary.plots==TRUE, and the calculated minimum temporal bandwidth.
 }
 \description{
 This function calculates relationships between temporal bandwidth and possible spatial resolution for a given power and suggests minimum possible temporal bandwidth for a given resolution

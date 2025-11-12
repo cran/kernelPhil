@@ -37,11 +37,15 @@ kernel.smooth.in.time<-function(dataset,dependent.variable="dependent.variable",
 	if(typeof(dataset[,dependent.variable])=="logical"){dataset[,dependent.variable]<-factor(dataset[,dependent.variable]);}
 
 	# supply weights=1 if missing
-	if(!(weight %in% colnames(dataset))){dataset$weight<-1;}
+	if(!(weight %in% colnames(dataset))){
+		weight<-"weight";
+		dataset$weight<-1;
+	}
 	else if(weight!="weight"){dataset$weight<-dataset[,weight];}
 
 	suppressWarnings(sample_density<-stats::density(dataset[,time],bandwidth=bandwidth,kernel="gaussian",weights=dataset$weight));
 	sample_density<-data.frame(x=sample_density$x,y=sample_density$y);
+	if(nrow(sample_density[which(sample_density$y>=sample.density.threshold),])==0){stop("not enough data to achieve this sample density threshold at this bandwidth - try increasing bandwidth or decreasing sample density threshold");}
 	sample_density<-sample_density[which(sample_density$y>=sample.density.threshold),];
 	if(missing(measure.times)){
 		kde_range<-seq(from=min(sample_density$x),to=max(sample_density$x),length.out=length.out);
